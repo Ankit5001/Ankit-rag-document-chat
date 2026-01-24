@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent PDF Query</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📄 Intelligent PDF Query</h1>
+        
+        <form id="queryForm">
+            <div class="upload-section">
+                <label for="pdfFile">Upload PDF:</label>
+                <input type="file" id="pdfFile" accept=".pdf" required>
+            </div>
+            
+            <div class="chat-box" id="chatBox">
+                <p class="bot-msg">Hello! Upload a PDF and ask me anything about it.</p>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="question" placeholder="Ask a question..." required>
+                <button type="submit" id="sendBtn">Send</button>
+            </div>
+        </form>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
