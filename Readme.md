@@ -38,7 +38,7 @@ A full-stack **RAG (Retrieval-Augmented Generation)** application that allows us
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/AI-Document-Classifier.git
+git clone https://github.com/Ankit5001/rag-document-chat.git
 cd AI-Document-Classifier
 ```
 
