@@ -15,53 +15,87 @@ fileInput.addEventListener('change', () => {
 
 // 2. Load History on Page Load
 document.addEventListener('DOMContentLoaded', async () => {
+    loadHistory();
+});
+
+async function loadHistory() {
     try {
         const response = await fetch('/history');
         const history = await response.json();
         
-        // Clear existing default list
         historyList.innerHTML = '';
 
         history.forEach(chat => {
             const item = document.createElement('div');
             item.className = 'history-item';
-            // Add an icon and the user message
-            item.innerHTML = `<i class="far fa-message"></i> ${chat.user_message}`;
             
-            // When clicked, load that specific chat into the main view
+            // Safety: Handle null or empty messages
+            let safeUserMsg = "New Chat";
+            if (chat.user_message) {
+                safeUserMsg = chat.user_message.substring(0, 25);
+            }
+            
+            item.innerHTML = `
+                <div class="history-text">
+                    <i class="far fa-message"></i> 
+                    <span>${safeUserMsg}...</span>
+                </div>
+                <i class="fas fa-trash delete-btn" data-id="${chat.id}"></i>
+            `;
+
+            // Click Item -> Load Chat
             item.onclick = () => {
-                chatBox.innerHTML = ''; // Clear current screen
-                appendMessage(chat.user_message, 'user');
-                appendMessage(chat.ai_response, 'ai');
+                chatBox.innerHTML = '';
+                // Safety: Ensure no "null" is passed to appendMessage
+                const safeAiResponse = chat.ai_response || "";
+                const safeUserMsg = chat.user_message || "";
+                
+                appendMessage(safeUserMsg, 'user');
+                appendMessage(safeAiResponse, 'ai');
             };
+
+            // Click Trash -> Delete Chat
+            const deleteBtn = item.querySelector('.delete-btn');
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation(); // Prevent loading the chat
+                if(confirm("Delete this chat permanently?")) {
+                    await deleteChat(chat.id);
+                    loadHistory();
+                }
+            };
+
             historyList.appendChild(item);
         });
     } catch (error) {
         console.error("Failed to load history:", error);
     }
-});
+}
 
-// 3. Handle Form Submit (STREAMING LOGIC)
+async function deleteChat(chatId) {
+    try {
+        await fetch(`/delete/${chatId}`, { method: 'DELETE' });
+    } catch (error) {
+        console.error("Error deleting chat:", error);
+    }
+}
+
+// 3. Handle Form Submit
 chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const questionInput = document.getElementById('question');
     const question = questionInput.value;
 
-    // Validation: Require file if it's the very first message
     if (!fileInput.files[0] && document.querySelectorAll('.message.user').length === 0) {
         alert("Please attach a PDF document to start!");
         return;
     }
 
-    // UI: Show User Message immediately
     appendMessage(question, 'user');
-    questionInput.value = ''; // Clear input
+    questionInput.value = '';
 
-    // UI: Show "Thinking..." indicator
     const loadingId = appendLoading();
 
-    // Prepare data to send
     const formData = new FormData();
     formData.append('question', question);
     if (fileInput.files[0]) {
@@ -69,24 +103,22 @@ chatForm.addEventListener('submit', async (e) => {
     }
 
     try {
-        // Send request to backend
         const response = await fetch('/ask-pdf', {
             method: 'POST',
             body: formData
         });
 
-        // --- KEY CHANGE: STREAMING HANDLER ---
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        // Remove the "Thinking..." bubble
-        document.getElementById(loadingId).remove();
+        // Remove Loading Bubble
+        if(document.getElementById(loadingId)) {
+            document.getElementById(loadingId).remove();
+        }
 
-        // Create a new empty bubble for the AI response
-        const aiMsgId = `ai-msg-${Date.now()}`;
+        // Create AI Bubble
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message ai';
-        msgDiv.id = aiMsgId;
         msgDiv.innerHTML = `
             <div class="avatar"><i class="fas fa-robot"></i></div>
             <div class="message-content"></div> 
@@ -94,23 +126,21 @@ chatForm.addEventListener('submit', async (e) => {
         chatBox.appendChild(msgDiv);
         const contentDiv = msgDiv.querySelector('.message-content');
 
-        // Loop to read the stream chunk-by-chunk
+        // Stream Loop
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            // Decode raw bytes to text
             const text = decoder.decode(value, { stream: true });
-            
-            // Append new text to the bubble (convert newlines to HTML breaks)
-            contentDiv.innerHTML += text.replace(/\n/g, '<br>');
-            
-            // Auto Scroll to bottom
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            if (text) {
+                contentDiv.innerHTML += text.replace(/\n/g, '<br>');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
         }
+        
+        loadHistory(); // Refresh sidebar to show new chat
 
     } catch (error) {
-        // If error, remove loading and show error message
         if(document.getElementById(loadingId)) {
             document.getElementById(loadingId).remove();
         }
@@ -119,15 +149,16 @@ chatForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Helper: Append a Static Message (User or History)
+// Helper: Append Message
 function appendMessage(text, sender) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${sender}`;
     
     const avatar = sender === 'user' ? '<i class="far fa-user"></i>' : '<i class="fas fa-robot"></i>';
     
-    // Safety check: ensure text is not null
-    const formattedText = text ? text.replace(/\n/g, '<br>') : "";
+    // Safety: Convert null/undefined to empty string
+    const safeText = text ? text : ""; 
+    const formattedText = safeText.replace(/\n/g, '<br>');
 
     msgDiv.innerHTML = `
         <div class="avatar">${avatar}</div>
@@ -135,23 +166,21 @@ function appendMessage(text, sender) {
     `;
     
     chatBox.appendChild(msgDiv);
-    chatContainer.scrollTop = chatContainer.scrollHeight; // Auto scroll
+    chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Helper: Create the "Thinking..." Animation
+// Helper: Loading Animation
 function appendLoading() {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ai`;
     const id = `loading-${Date.now()}`;
     msgDiv.id = id;
-    
     msgDiv.innerHTML = `
         <div class="avatar"><i class="fas fa-robot"></i></div>
         <div class="message-content typing-indicator">
             <span></span><span></span><span></span>
         </div>
     `;
-    
     chatBox.appendChild(msgDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     return id;

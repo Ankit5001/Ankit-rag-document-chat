@@ -11,13 +11,13 @@ from sqlalchemy.orm import Session
 from database import engine, get_db
 import models
 
-# ---- LANGCHAIN CORE & COMMUNITY (No "langchain.chains" imports!) ----
+# ---- LANGCHAIN CORE & COMMUNITY ----
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 
-# We use Core components to build the chain manually
+# LCEL Imports
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -41,7 +41,7 @@ async def get_history(db: Session = Depends(get_db)):
     chats = db.query(models.ChatHistory).order_by(models.ChatHistory.id.desc()).all()
     return chats
 
-# Helper function to format documents into a string
+# Helper function to format documents
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
@@ -84,8 +84,7 @@ async def ask_pdf(
             """
             prompt = ChatPromptTemplate.from_template(template)
 
-            # 6. Build Chain using LCEL Pipes (|)
-            # This replaces "create_retrieval_chain" and works on all versions
+            # 6. Build Chain (LCEL)
             rag_chain = (
                 {"context": retriever | format_docs, "question": RunnablePassthrough()}
                 | prompt
@@ -97,7 +96,7 @@ async def ask_pdf(
             accumulated_answer = ""
             async for chunk in rag_chain.astream(question):
                 accumulated_answer += chunk
-                yield chunk  # Send word-by-word to browser
+                yield chunk  # Send word-by-word
 
             # 8. Save to Database
             new_chat = models.ChatHistory(
@@ -112,3 +111,16 @@ async def ask_pdf(
                 os.remove(temp_path)
 
     return StreamingResponse(response_generator(), media_type="text/plain")
+
+# --- DELETE ENDPOINT (MOVED OUTSIDE) ---
+@app.delete("/delete/{chat_id}")
+async def delete_chat(chat_id: int, db: Session = Depends(get_db)):
+    # Find the chat by ID
+    chat = db.query(models.ChatHistory).filter(models.ChatHistory.id == chat_id).first()
+    
+    if chat:
+        db.delete(chat)
+        db.commit()
+        return {"status": "success", "message": "Chat deleted"}
+    
+    return {"status": "error", "message": "Chat not found"}
